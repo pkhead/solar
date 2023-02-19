@@ -1,0 +1,5 @@
+func main()
+	if true then
+		drop 5 + 4
+	end
+end

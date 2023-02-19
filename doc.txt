@@ -1,0 +1,23 @@
+sprite Sprite1 {
+	name = "Sprite1"
+
+	costumes = {
+		"cat1" = "cat1.svg",
+		"cat2" = "cat2.svg",
+	}
+
+	sounds = {
+		"meow" = "meow.mp3"
+	}
+
+	on start do
+		sprite.move(10)
+	end
+
+	on key space do
+		sprite.play_sound("meow")
+	end
+}
+
+# cli:
+# solar project/Sprite1.slr project/Sprite2.slr project/Sprite3.slr -assets project/assets
