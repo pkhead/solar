@@ -94,7 +94,28 @@ pub enum RotationStyle {
     AllAround,
 }
 
-pub type Script = Vec<Block>;
+#[derive(Debug)]
+pub struct Script {
+    blocks: Vec<Block>
+}
+
+impl Script {
+    pub fn new() -> Self {
+        Self {
+            blocks: Vec::new()
+        }
+    }
+
+    pub fn push(&mut self, block: Block) {
+        self.blocks.push(block);
+    }
+}
+
+impl JsonSerialize for Script {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
+        panic!("unimplemented");        
+    }
+}
 
 #[derive(Debug)]
 // Input slot in a block
