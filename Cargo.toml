@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 rand = "0.8"
 json = "0.12"
-# zip = "0.6.4"
+zip = "0.6.4"
+md5 = "0.7.0"

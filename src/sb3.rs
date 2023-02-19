@@ -1,10 +1,55 @@
-use std::rc::Rc;
+use std::io::Write;
+use std::collections::HashSet;
+use std::{rc::Rc, fs::File};
 use std::cell::RefCell;
 use rand::Rng;
+use std::fs;
+use std::path::Path;
 use json::{JsonValue};
 
+pub enum SerializeError {
+    JsonError(json::Error),
+    IoError(std::io::Error),
+    ZipError(zip::result::ZipError),
+    NoHash,
+    Unknown
+}
+
+// compatibility between json::Error and SerializeError
+impl From<json::Error> for SerializeError {
+    fn from(error: json::Error) -> Self {
+        SerializeError::JsonError(error)
+    }
+}
+
+// convert io::Error to SerializeError
+impl From<std::io::Error> for SerializeError {
+    fn from(value: std::io::Error) -> Self {
+        SerializeError::IoError(value)
+    }
+}
+
+// convert ZipErrors
+impl From<zip::result::ZipError> for SerializeError {
+    fn from(value: zip::result::ZipError) -> Self {
+        SerializeError::ZipError(value)
+    }
+}
+
+impl std::fmt::Display for SerializeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SerializeError::JsonError(e) => write!(f, "{}", e),
+            SerializeError::IoError(e) => write!(f, "{}", e),
+            SerializeError::NoHash => write!(f, "hash not generated"),
+            SerializeError::Unknown => write!(f, "unknown error"),
+            SerializeError::ZipError(e) => write!(f, "{}", e)
+        }
+    }
+}
+
 pub trait JsonSerialize {
-    fn serialize(&self) -> json::Result<JsonValue>;
+    fn serialize(&self) -> Result<JsonValue, SerializeError>;
 }
 
 #[derive(Debug)]
@@ -89,7 +134,7 @@ impl UserInput {
 }
 
 impl JsonSerialize for UserInput {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let value = match &self.value {
             Value::Number(num) => JsonValue::Number((*num).into()),
             Value::String(s) => JsonValue::String(s.clone()),
@@ -203,7 +248,7 @@ impl Block {
 }
 
 impl JsonSerialize for Block {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let res = json::object! {
             "next": null,
             "parent": null,
@@ -243,7 +288,7 @@ pub struct Variable {
 impl Variable {
     pub fn new(name: &str, value: Value) -> Self {
         Variable {
-            id: uuid(),
+            id: uuid() + name,
             name: String::from(name),
             value,
             sprite_name: None,
@@ -256,7 +301,7 @@ impl Variable {
         }
     }
 
-    pub fn serialize_monitor(&self) -> json::Result<JsonValue> {
+    pub fn serialize_monitor(&self) -> Result<JsonValue, SerializeError> {
         let mode = match self.mode {
             MonitorMode::Small => "default",
             MonitorMode::Large => "large", // TODO idk if this is the right string
@@ -296,7 +341,7 @@ impl Variable {
 }
 
 impl JsonSerialize for Variable {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let val = match &self.value {
             Value::String(s) => JsonValue::String(s.clone()),
             Value::Number(v) => JsonValue::Number((*v).into()),
@@ -329,6 +374,51 @@ pub struct Costume {
     pub path: String,
     pub rot_cx: f64,
     pub rot_cy: f64,
+
+    pub md5: Option<String>
+}
+
+impl Costume {
+    pub fn new(name: &str, path: &str, rot_cx: f64, rot_cy: f64) -> Self {
+        Self {
+            name: name.to_string(),
+            path: path.to_string(),
+            rot_cx,
+            rot_cy,
+            md5: None
+        }
+    }
+
+    pub fn read_file(&self) -> Result<Vec<u8>, std::io::Error> {
+        fs::read(&self.path)
+    }
+}
+
+impl JsonSerialize for Costume {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
+        // the file id will be the md5 checksum of the file contents
+        match &self.md5 {
+            Some(hash) => {
+                match Path::new(&self.path).extension().and_then(std::ffi::OsStr::to_str) {
+                    Some(ext) => {
+                        Ok(json::object! {
+                            "name": self.name.clone(),
+                            //"bitmapResolution": 1, // TODO i think it's 2
+                            "dataFormat": ext.clone(),
+                            "assetId": hash.clone(),
+                            "md5ext": format!("{}.{}", hash, &ext),
+                            "rotationCenterX": self.rot_cx,
+                            "rotationCenterY": self.rot_cy
+                        })
+                    },
+                    None => {
+                        Err(SerializeError::Unknown)
+                    }
+                }
+            },
+            None => Err(SerializeError::NoHash) 
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -368,7 +458,7 @@ pub struct Object {
     pub volume: f64,
     pub costume_index: usize,
 
-    pub layer: usize,
+    pub layer: usize
 }
 
 impl Object {
@@ -380,19 +470,22 @@ impl Object {
             data: Data::new(),
             global_data,
             scripts: Vec::new(),
-            costumes: Vec::new(),
+            costumes: vec![Costume::new("empty", "assets/empty_costume.svg", 240.0, 180.0)],
             sounds: Vec::new(),
             volume: 1.0,
             costume_index: 0,
-            layer: 0,
+            layer: 0
         }
     }
 }
 
 impl JsonSerialize for Object {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let mut vars = JsonValue::new_object();
+        let mut costumes = JsonValue::new_array();
 
+        // serialize data
+        // if is stage, store the global data in this
         if self.is_stage {
             let data = self.global_data.borrow();
 
@@ -405,6 +498,12 @@ impl JsonSerialize for Object {
             }
         }
 
+        // serialize costumes
+        for (_, costume) in self.costumes.iter().enumerate() {
+            let json = costume.serialize()?;
+            costumes.push(json)?;
+        }
+
         Ok(json::object! {
             "isStage": self.is_stage,
             "name": self.name.clone(),
@@ -412,10 +511,10 @@ impl JsonSerialize for Object {
             "lists": {}, // TODO
             "broadcasts": {}, // TODO
             "blocks": {}, // TODO
-            "comments": {}, // TODO
+            "comments": {},
             "currentCostume": self.costume_index,
-            "costumes": {}, // TODO
-            "sounds": {}, // TODO
+            "costumes": costumes, // TODO
+            "sounds": [], // TODO
             "volume": self.volume * 100.0,
             "layerOrder": self.layer
         })
@@ -431,7 +530,8 @@ pub struct Sprite {
     pub size: f64,
     pub dir: f64,
     pub draggable: bool,
-    pub rotation_style: RotationStyle
+    pub rotation_style: RotationStyle,
+    pub visible: bool
 }
 
 impl Sprite {
@@ -443,18 +543,20 @@ impl Sprite {
             size: 1.0,
             dir: 90.0,
             draggable: false,
-            rotation_style: RotationStyle::AllAround
+            rotation_style: RotationStyle::AllAround,
+            visible: true
         }
     }
 }
 
 impl JsonSerialize for Sprite {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let mut res = self.obj.serialize()?;
         
+        res["visible"] = JsonValue::Boolean(self.visible);
         res["x"] = self.x.into();
         res["y"] = self.y.into();
-        res["size"] = self.size.into();
+        res["size"] = (self.size * 100.0).into();
         res["direction"] = self.dir.into();
         res["draggable"] = JsonValue::Boolean(self.draggable);
         res["rotationStyle"] = match self.rotation_style {
@@ -468,6 +570,7 @@ impl JsonSerialize for Sprite {
 }
 
 #[derive(Debug)]
+/// The root of a Scratch project
 pub struct Project {
     pub name: String,
 
@@ -499,7 +602,7 @@ impl Project {
             data: Rc::clone(&cell),
             tempo: 60.0,
             video_transparency: 0.5,
-            video: false,
+            video: true,
         }
     }
 
@@ -510,10 +613,69 @@ impl Project {
         self.sprites.push(sprite);
         self.sprites.last_mut().unwrap() // return reference to pushed sprite
     }
+
+    // TODO remove_sprite
+
+    pub fn save(&mut self, path_str: &str) -> Result<(), SerializeError> {
+        // begin zip file
+        let file = File::create(path_str)?;
+        let mut zip = zip::ZipWriter::new(file);
+
+        let options = zip::write::FileOptions::default();
+
+        let mut assets_visited: HashSet<String> = HashSet::new();
+
+        let mut write_costume = |costume: &mut Costume| -> Result<(), SerializeError> {
+            // get file contents and calculate md5 hash
+            let file_contents = costume.read_file()?;
+            let md5 = format!("{:x}", md5::compute(&file_contents));
+
+            if !assets_visited.contains(&md5) {
+                assets_visited.insert(md5.clone());
+
+                let path = Path::new(&costume.path);
+
+                // extract file extension
+                let ext = match path.extension().and_then(std::ffi::OsStr::to_str) {
+                    Some(v) => String::from(".") + v,
+                    None => String::from(".")
+                };
+
+                
+                // begin writing file to zip
+                zip.start_file(md5.clone() + &ext, options)?;
+                zip.write_all(&file_contents)?;
+            }
+            
+            costume.md5 = Some(md5);
+            Ok(())
+        };
+
+        // begin writing asset files
+        for (_, costume) in self.stage.costumes.iter_mut().enumerate() {
+            write_costume(costume)?;
+        }
+
+        for (_, sprite) in self.sprites.iter_mut().enumerate() {
+            for (_, costume) in sprite.obj.costumes.iter_mut().enumerate() {
+                write_costume(costume)?;
+            }
+        }
+
+        // begin writing project data
+        let json_val = self.serialize()?;
+        let json = json::stringify(json_val);
+        zip.start_file("project.json", options)?;
+        zip.write_all(json.as_bytes())?;
+
+        zip.finish()?;
+
+        Ok(())
+    }
 }
 
 impl JsonSerialize for Project {
-    fn serialize(&self) -> json::Result<JsonValue> {
+    fn serialize(&self) -> Result<JsonValue, SerializeError> {
         let mut targets = JsonValue::new_array();
         let mut monitors = JsonValue::new_array();
         
@@ -524,6 +686,7 @@ impl JsonSerialize for Project {
         stage["tempo"] = self.tempo.into();
         stage["videoTransparency"] = (self.video_transparency * 100.0).into();
         stage["videoState"] = if self.video { "on".into() } else { "off".into() };
+        stage["textToSpeechLanguage"] = json::Null;
 
         targets.push(stage)?;
 
@@ -532,18 +695,22 @@ impl JsonSerialize for Project {
             
             // serialize variable monitors
             for (_, var) in sprite.obj.data.vars.iter().enumerate() {
-                monitors.push(var.serialize_monitor()?)?;
+                if var.visible {
+                    monitors.push(var.serialize_monitor()?)?;
+                }
             }
 
             // TODO serialize list monitors
-            for (_, list) in sprite.obj.data.lists.iter().enumerate() {
-                // monitors.push(list.serialize_monitor()?)?;
-            }
+            // for (_, list) in sprite.obj.data.lists.iter().enumerate() {
+            //     monitors.push(list.serialize_monitor()?)?;
+            // }
         }
 
         // serialize global variable monitors
         for (_i, var) in self.data.borrow().vars.iter().enumerate() {
-            monitors.push(var.serialize_monitor()?)?;
+            if var.visible {
+                monitors.push(var.serialize_monitor()?)?;
+            }
         }
 
         Ok(json::object! {
@@ -552,8 +719,9 @@ impl JsonSerialize for Project {
             "extensions": [],
             "meta": {
                 "semver": "3.0.0",
-                "vm": "0.2.0-prerelease.20201112030151",
-                "agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36"
+                "vm": "1.3.18",
+                // TODO different user-agent
+                "agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.46"
             }
         })
     }

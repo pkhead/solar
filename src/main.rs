@@ -58,8 +58,13 @@ fn main() {
     // add script to sprite
     sprite.obj.scripts.push(script);
 
+    // add costumes to sprite
+    sprite.obj.costumes.push(Costume::new("costume1", "assets/cat1.svg", 48.0, 50.0));
+
     // add global "my variable" = 0
     project.data.borrow_mut().vars.push(Variable::new("my variable", Value::Number(0.0)));
+
+    project.save("out.sb3");
 
     match project.serialize() {
         Ok(serialized) => {
