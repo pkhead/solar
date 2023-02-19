@@ -6,12 +6,16 @@ use rand::Rng;
 use std::fs;
 use std::path::Path;
 use json::{JsonValue};
+pub use opcode::*;
+
+mod opcode;
 
 pub enum SerializeError {
     JsonError(json::Error),
     IoError(std::io::Error),
     ZipError(zip::result::ZipError),
     NoHash,
+    NoCostume,
     Unknown
 }
 
@@ -43,6 +47,7 @@ impl std::fmt::Display for SerializeError {
             SerializeError::IoError(e) => write!(f, "{}", e),
             SerializeError::NoHash => write!(f, "hash not generated"),
             SerializeError::Unknown => write!(f, "unknown error"),
+            SerializeError::NoCostume => write!(f, "no costume"),
             SerializeError::ZipError(e) => write!(f, "{}", e)
         }
     }
@@ -74,30 +79,6 @@ pub enum InputType {
 }
 
 #[derive(Debug)]
-pub enum StopMode {
-    All,
-    Myself,
-    Other
-}
-
-#[derive(Debug)]
-pub enum SensingType {
-    Loudness,
-    Timer
-}
-
-#[derive(Debug)]
-pub enum KeyCode {
-    Any,
-    Space,
-    UpArrow,
-    DownArrow,
-    RightArrow,
-    LeftArrow,
-    // a .. z
-}
-
-#[derive(Debug)]
 // Variable monitor mode
 pub enum MonitorMode {
     Small,
@@ -118,35 +99,31 @@ pub type Script = Vec<Block>;
 #[derive(Debug)]
 // Input slot in a block
 pub struct UserInput {
-    pub input_type: InputType,
     pub value: Value,
     pub block: Option<Box<Block>>,
 }
 
 impl UserInput {
-    pub fn new(input_type: InputType, value: Value, block: Option<Box<Block>>) -> Self {
+    pub fn new(value: Value, block: Option<Box<Block>>) -> Self {
         Self {
-            input_type,
             value,
             block
         }
     }
-}
 
-impl JsonSerialize for UserInput {
-    fn serialize(&self) -> Result<JsonValue, SerializeError> {
+    fn serialize(&self, input_type: InputType) -> Result<JsonValue, SerializeError> {
         let value = match &self.value {
             Value::Number(num) => JsonValue::Number((*num).into()),
             Value::String(s) => JsonValue::String(s.clone()),
             Value::Boolean(b) => JsonValue::Boolean(*b)
         };
-
-        let input = match &self.input_type {
+    
+        let input = match input_type {
             InputType::Number => json::array![4, value],
             InputType::String => json::array![10, value],
             _ => panic!("unimplemented input type")
         };
-
+    
         Ok(match &self.block {
             Some(v) => json::array! [3, v.uuid.clone(), input],
             None => json::array![1, input]
@@ -164,72 +141,6 @@ fn uuid() -> String {
     }
 
     res
-}
-
-#[derive(Debug)]
-pub enum Opcode {
-    Forever(Script),
-    Repeat(UserInput, Script),
-    If(Box<Block>, Script),
-    IfElse(Box<Block>, Script, Script),
-    Stop(StopMode),
-    Wait(UserInput),
-    WaitUntil(Box<Block>),
-    RepeatUntil(Box<Block>, Script),
-    //control_while
-    //control_for_each
-    WhenStartAsClone(),
-    CreateClone(Box<Block>), CreateCloneMenu(String),
-    DeleteThisClone(),
-    //control_get_counter
-    //control_incr_counter
-    //control_clear_counter
-    //control_all_at_once
-
-    // add data.js
-    // add default_toolbox.js
-    //event_whentouchingobject & event_touchingobjectmenu
-    WhenGreenFlagClicked(),
-    // add event_whenthisspriteclicked(),
-    WhenSpriteClicked(),
-    WhenStageClicked(),
-    WhenBroadcastReceived(String),
-    WhenBackdropSwitchesTo(String),
-    WhenGreaterThan(SensingType, UserInput),
-    Broadcast(Box<Block>), // holds an event_broadcast_menu block by default
-    BroadcastAndWait(Box<Block>), // holds an evente_broadcast_menu_block by default
-    BroadcastMenu(String),
-    WhenKeyPressed(KeyCode),
-
-    // add extensions.js
-
-    Say(UserInput),
-    // add looks.js
-
-    MoveSteps(UserInput),
-    TurnRight(UserInput),
-    TurnLeft(UserInput),
-    PointInDirection(UserInput),
-    PointTowards(Box<Block>), PointTowardsMenu(String),
-    GotoXY(UserInput, UserInput),
-    Goto(Box<Block>), GotoMenu(String),
-    GlideToXY(UserInput, UserInput, UserInput),
-    GlideTo(Box<Block>),
-    GlideToMenu(String),
-    ChangeX(UserInput),
-    SetX(UserInput),
-    ChangeY(UserInput),
-    SetY(UserInput),
-    BounceOnEdge(),
-    SetRotationStyle(RotationStyle),
-    GetX(),
-    GetY(),
-    GetDirection()
-    // add operators.js
-    // add procedures.js
-    // add sensing.js
-    // add sound.js
-    // add vertical_extension.js
 }
 
 #[derive(Debug)]
@@ -470,12 +381,16 @@ impl Object {
             data: Data::new(),
             global_data,
             scripts: Vec::new(),
-            costumes: vec![Costume::new("empty", "assets/empty_costume.svg", 240.0, 180.0)],
+            costumes: Vec::new(),
             sounds: Vec::new(),
             volume: 1.0,
             costume_index: 0,
             layer: 0
         }
+    }
+
+    pub fn add_costume(&mut self, costume: Costume) {
+        self.costumes.push(costume);
     }
 }
 
@@ -499,6 +414,10 @@ impl JsonSerialize for Object {
         }
 
         // serialize costumes
+        if self.costumes.len() == 0 {
+            return Err(SerializeError::NoCostume);
+        }
+
         for (_, costume) in self.costumes.iter().enumerate() {
             let json = costume.serialize()?;
             costumes.push(json)?;

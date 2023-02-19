@@ -45,6 +45,7 @@ fn main() {
     */
     
     let mut project = Project::new();
+    project.stage.add_costume(Costume::new("empty", "assets/empty_costume.svg", 240.0, 180.0));
     let sprite = project.create_sprite("Sprite1");
 
     let mut script = Script::new();
@@ -53,7 +54,7 @@ fn main() {
     script.push(Block::new(Opcode::WhenGreenFlagClicked()));
 
     // move 10 steps 
-    script.push(Block::new(Opcode::MoveSteps(UserInput::new(InputType::Number, Value::Number(10.0), None))));
+    script.push(Block::new(Opcode::MoveSteps(UserInput::new(Value::Number(10.0), None))));
 
     // add script to sprite
     sprite.obj.scripts.push(script);
