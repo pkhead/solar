@@ -65,7 +65,7 @@ fn main() {
     // add global "my variable" = 0
     project.data.borrow_mut().vars.push(Variable::new("my variable", Value::Number(0.0)));
 
-    project.save("out.sb3");
+    project.save("out.sb3").expect("could not save");
 
     match project.serialize() {
         Ok(serialized) => {

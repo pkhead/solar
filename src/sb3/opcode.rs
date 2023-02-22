@@ -141,14 +141,14 @@ pub enum MathOp {
 #[derive(Debug)]
 pub enum Opcode {
     // Control
-    Forever(Script),
-    Repeat(UserInput, Script),
-    If(Box<Block>, Script),
-    IfElse(Box<Block>, Script, Script),
+    Forever(ScriptInput),
+    Repeat(UserInput, ScriptInput),
+    If(ReporterInput, ScriptInput),
+    IfElse(ReporterInput, ScriptInput, ScriptInput),
     Stop(StopOption),
     Wait(UserInput),
-    WaitUntil(Box<Block>),
-    RepeatUntil(Box<Block>, Script),
+    WaitUntil(ReporterInput),
+    RepeatUntil(ReporterInput, ScriptInput),
     // obsolete: control_while
     // obsolete: control_for_each
     StartAsClone(),
@@ -328,8 +328,8 @@ pub enum Opcode {
     // TODO more music blocks (where are they?)
 }
 
-impl JsonSerialize for Opcode {
-    fn serialize(&self) -> Result<JsonValue, SerializeError> {
+impl Block {
+    pub fn serialize(&self, block_list: &mut JsonValue, parent_uuid: Option<&String>) -> Result<JsonValue, SerializeError> {
         // this function is a big todo, so disable warnings on unused variables for now
         #![allow(unused_variables)]
 
@@ -337,69 +337,70 @@ impl JsonSerialize for Opcode {
 
         let opcode_str: &str;
         let mut inputs = JsonValue::new_object();
-        let mut fields = JsonValue::new_object();
+        let fields = JsonValue::new_object();
 
-        match self {
+        match &self.opcode {
             // CONTROL //
-            Self::Forever(substack) => {
+            Opcode::Forever(substack) => {
                 opcode_str = "control_forever";
-                inputs["SUBSTACK"] = substack.serialize()?;
+                inputs["SUBSTACK"] = substack.serialize(block_list, &self.uuid)?;
             },
 
-            Self::Repeat(times, substack) => {
+            Opcode::Repeat(times, substack) => {
                 opcode_str = "control_repeat";
                 inputs["TIMES"] = times.serialize(InputType::WholeNumber)?;
-                inputs["SUBSTACK"] = substack.serialize()?;
+                inputs["SUBSTACK"] = substack.serialize(block_list, &self.uuid)?;
             },
 
-            Self::If(condition, substack) => {
+            Opcode::If(condition, substack) => {
                 opcode_str = "control_if";
-                inputs["CONDITION"] = condition.serialize()?;
-                inputs["SUBSTACK"] = substack.serialize()?;
+                inputs["CONDITION"] = condition.serialize(block_list, &self.uuid)?;
+                inputs["SUBSTACK"] = substack.serialize(block_list, &self.uuid)?;
             },
 
-            Self::IfElse(condition, substack, substack2) => {
+            Opcode::IfElse(condition, substack, substack2) => {
                 opcode_str = "control_if_else";
-                inputs["CONDITION"] = condition.serialize()?;
-                inputs["SUBSTACK"] = substack.serialize()?;
+                inputs["CONDITION"] = condition.serialize(block_list, &self.uuid)?;
+                inputs["SUBSTACK"] = substack.serialize(block_list, &self.uuid)?;
+                inputs["SUBSTACK2"] = substack2.serialize(block_list, &self.uuid)?;
             },
 
-            Self::Stop(option) => { // TODO
+            Opcode::Stop(option) => { // TODO
                 panic!("control_stop unimplemented");
             },
 
-            Self::Wait(duration) => {
+            Opcode::Wait(duration) => {
                 opcode_str = "control_wait";
                 inputs["DURATION"] = duration.serialize(InputType::PositiveNumber)?;
             },
 
-            Self::WaitUntil(condition) => {
+            Opcode::WaitUntil(condition) => {
                 opcode_str = "control_wait_until";
-                inputs["CONDITION"] = condition.serialize()?;
+                inputs["CONDITION"] = condition.serialize(block_list, &self.uuid)?;
             },
 
-            Self::RepeatUntil(condition, substack) => {
+            Opcode::RepeatUntil(condition, substack) => {
                 opcode_str = "control_repeat_until";
-                inputs["CONDITION"] = condition.serialize()?;
-                inputs["SUBSTACK"] = substack.serialize()?;
+                inputs["CONDITION"] = condition.serialize(block_list, &self.uuid)?;
+                inputs["SUBSTACK"] = substack.serialize(block_list, &self.uuid)?;
             },
 
             // obsolete: control_while
             // obsolete: control_for_each
             
-            Self::StartAsClone() => {
+            Opcode::StartAsClone() => {
                 opcode_str = "control_start_as_clone";
             },
 
-            Self::CreateCloneOfMenu(clone_option) => { // TODO
+            Opcode::CreateCloneOfMenu(clone_option) => { // TODO
                 todo!("control_createcloneof_menu");
             },
 
-            Self::CreateCloneOf(clone_option) => { // TODO
+            Opcode::CreateCloneOf(clone_option) => { // TODO
                 todo!("control_createcloneof");
             },
 
-            Self::DeleteThisClone() => {
+            Opcode::DeleteThisClone() => {
                 opcode_str = "control_delete_this_clone";
             },
 
@@ -412,508 +413,507 @@ impl JsonSerialize for Opcode {
 
 
             // DATA //
-            Self::Variable(variable) => { // TODO
+            Opcode::Variable(variable) => { // TODO
                 todo!("data_variable");
             },
 
-            Self::SetVariableTo(variable, value) => { // TODO
+            Opcode::SetVariableTo(variable, value) => { // TODO
                 todo!("data_setvariableto");
             },
 
-            Self::ChangeVariableBy(variable, value) => { // TODO
+            Opcode::ChangeVariableBy(variable, value) => { // TODO
                 todo!("data_changevariableby");
             },
 
-            Self::ShowVariable(variable) => { // TODO
+            Opcode::ShowVariable(variable) => { // TODO
                 todo!("data_showvariable");
             },
 
-            Self::HideVariable(variable) => { // TODO
+            Opcode::HideVariable(variable) => { // TODO
                 todo!("data_hidevariable");
             },
 
-            Self::AddToList(item, list) => { // TODO
+            Opcode::AddToList(item, list) => { // TODO
                 todo!("data_addtolist");
             },
 
-            Self::DeleteOfList(index, list) => { // TODO
+            Opcode::DeleteOfList(index, list) => { // TODO
                 todo!("data_deleteoflist");
             },
 
-            Self::DeleteAllOfList(list) => { // TODO
+            Opcode::DeleteAllOfList(list) => { // TODO
                 todo!("data_deletealloflist");
             },
 
-            Self::InsertAtList(item, index, list) => { // TODO
+            Opcode::InsertAtList(item, index, list) => { // TODO
                 todo!("data_insertatlist");
             },
 
-            Self::ReplaceItemOfList(index, list, item) => {
+            Opcode::ReplaceItemOfList(index, list, item) => {
                 todo!("data_replaceitemoflist");
             },
 
-            Self::ItemOfList(index, list) => {
+            Opcode::ItemOfList(index, list) => {
                 todo!("data_itemoflist");
             },
 
-            Self::ItemNumOfList(item, list) => {
+            Opcode::ItemNumOfList(item, list) => {
                 todo!("data_itemnumoflist");
             },
 
-            Self::LengthOfList(list) => {
+            Opcode::LengthOfList(list) => {
                 todo!("data_lengthoflist");
             },
 
-            Self::ListContainsItem(list, item) => {
+            Opcode::ListContainsItem(list, item) => {
                 todo!("data_listcontainsitem");
             },
 
-            Self::ShowList(list) => {
+            Opcode::ShowList(list) => {
                 todo!("data_showlist");
             },
 
-            Self::HideList(list) => {
+            Opcode::HideList(list) => {
                 todo!("data_hidelist");
             },
 
             // EVENT //
             // TODO event_whentouchingobject
             // TODO touchingobjectmenu
-            Self::WhenGreenFlagClicked() => {
+            Opcode::WhenGreenFlagClicked() => {
                 opcode_str = "event_whenflagclicked";
             },
 
-            Self::WhenThisSpriteClicked() => {
+            Opcode::WhenThisSpriteClicked() => {
                 opcode_str = "event_whenthisspriteclicked";
             },
 
-            Self::WhenStageClicked() => {
+            Opcode::WhenStageClicked() => {
                 opcode_str = "event_whenstageclicked";
             },
 
-            Self::WhenBroadcastReceived(broadcast_option) => {
+            Opcode::WhenBroadcastReceived(broadcast_option) => {
                 todo!("event_whenbroadcastreceived");
             },
 
-            Self::WhenBackdropSwitchesTo(backdrop) => {
+            Opcode::WhenBackdropSwitchesTo(backdrop) => {
                 todo!("event_whenbackdropswitchesto");
             },
 
-            Self::WhenGreaterThan(when_greater_than_menu, value) => {
+            Opcode::WhenGreaterThan(when_greater_than_menu, value) => {
                 todo!("event_whengreaterthan");
             },
 
-            Self::BroadcastMenu(broadcast_option) => {
+            Opcode::BroadcastMenu(broadcast_option) => {
                 todo!("event_broadcast_menu");
             },
 
-            Self::Broadcast(broadcast_input) => {
+            Opcode::Broadcast(broadcast_input) => {
                 todo!("event_broadcast");
             },
 
-            Self::BroadcastAndWait(broadcast_input) => {
+            Opcode::BroadcastAndWait(broadcast_input) => {
                 todo!("event_broadcastandwait");
             },
 
-            Self::WhenKeyPressed(key_option) => {
+            Opcode::WhenKeyPressed(key_option) => {
                 todo!("event_whenkeypressed");
             },
 
 
             // LOOKS //
-            Self::SayForSecs(message, secs) => {
+            Opcode::SayForSecs(message, secs) => {
                 opcode_str = "looks_sayforsecs";
                 inputs["MESSAGE"] = message.serialize(InputType::String)?;
                 inputs["SECS"] = message.serialize(InputType::PositiveNumber)?;
             },
 
-            Self::Say(message) => {
+            Opcode::Say(message) => {
                 opcode_str = "looks_say";
                 inputs["MESSAGE"] = message.serialize(InputType::String)?;
             },
 
-            Self::ThinkForSecs(message, secs) => {
+            Opcode::ThinkForSecs(message, secs) => {
                 opcode_str = "looks_thinkforsecs";
                 inputs["MESSAGE"] = message.serialize(InputType::String)?;
                 inputs["SECS"] = secs.serialize(InputType::PositiveNumber)?;
             },
 
-            Self::Think(message) => {
+            Opcode::Think(message) => {
                 opcode_str = "looks_think";
                 inputs["THINK"] = message.serialize(InputType::String)?;
             },
 
-            Self::Show() => {
+            Opcode::Show() => {
                 opcode_str = "looks_show";
             },
 
-            Self::Hide() => {
+            Opcode::Hide() => {
                 opcode_str = "looks_hide";
             },
 
             // obsolete: looks_hideallsprites
             
-            Self::ChangeGraphicEffectBy(effect, change) => {
-                opcode_str = "looks_changeffectby";
+            Opcode::ChangeGraphicEffectBy(effect, change) => {
                 todo!("looks_changeeffectby");
             },
 
-            Self::SetGraphicEffectTo(effect, change) => {
+            Opcode::SetGraphicEffectTo(effect, change) => {
                 todo!("looks_seteffectto");
             },
 
-            Self::ClearGraphicEffects() => {
+            Opcode::ClearGraphicEffects() => {
                 opcode_str = "looks_cleargraphiceffects";
             },
 
-            Self::ChangeSizeBy(change) => {
+            Opcode::ChangeSizeBy(change) => {
                 opcode_str = "looks_changesizeby";
                 inputs["CHANGE"] = change.serialize(InputType::Number)?;
             },
 
-            Self::SetSizeTo(size) => {
+            Opcode::SetSizeTo(size) => {
                 opcode_str = "looks_setsizeto";
                 inputs["SIZE"] = size.serialize(InputType::Number)?;
             },
 
-            Self::Size() => {
+            Opcode::Size() => {
                 opcode_str = "looks_size";
             },
 
             // obsolete: looks_changestretchby
             // obsolete: looks_setstretchto
 
-            Self::Costume(costume) => {
+            Opcode::Costume(costume) => {
                 todo!("looks_costume");
             },
 
-            Self::SwitchCostumeTo(costume) => {
+            Opcode::SwitchCostumeTo(costume) => {
                 todo!("looks_switchcostumeto");
             },
 
-            Self::NextCostume() => {
+            Opcode::NextCostume() => {
                 opcode_str = "looks_nextcostume";
             },
 
-            Self::SwitchBackdropTo(backdrop) => {
+            Opcode::SwitchBackdropTo(backdrop) => {
                 todo!("looks_switchbackdropto");
             },
 
-            Self::Backdrops(backdrop) => {
+            Opcode::Backdrops(backdrop) => {
                 todo!("looks_backdrops");
             },
 
-            Self::GoToFrontBack(front_back) => {
+            Opcode::GoToFrontBack(front_back) => {
                 todo!("looks_gotofrontback");
             },
 
-            Self::GoForwardBackwardLayers(forward_backward) => {
+            Opcode::GoForwardBackwardLayers(forward_backward) => {
                 todo!("looks_goforwardbackwardlayers");
             },
 
-            Self::BackdropNumberName(number_name) => {
+            Opcode::BackdropNumberName(number_name) => {
                 todo!("looks_backdropnumbername");
             },
 
-            Self::CostumeNumberName(number_name) => {
+            Opcode::CostumeNumberName(number_name) => {
                 todo!("looks_costumenumbername");
             },
 
-            Self::SwitchBackdropToAndWait(backdrop) => {
+            Opcode::SwitchBackdropToAndWait(backdrop) => {
                 todo!("looks_switchbackdroptoandwait");
             },
 
-            Self::NextBackdrop() => {
+            Opcode::NextBackdrop() => {
                 opcode_str = "looks_nextbackdrop";
             },
 
 
             // MOTION //
 
-            Self::MoveSteps(steps) => {
+            Opcode::MoveSteps(steps) => {
                 opcode_str = "motion_movesteps";
                 inputs["STEPS"] = steps.serialize(InputType::Number)?;
             },
             
-            Self::TurnRight(degrees) => {
+            Opcode::TurnRight(degrees) => {
                 opcode_str = "motion_turnright";
                 inputs["DEGREES"] = degrees.serialize(InputType::Number)?;
             },
 
-            Self::TurnLeft(degrees) => {
+            Opcode::TurnLeft(degrees) => {
                 opcode_str = "motion_turnleft";
                 inputs["DEGREES"] = degrees.serialize(InputType::Number)?;
             },
 
-            Self::PointInDirection(direction) => {
+            Opcode::PointInDirection(direction) => {
                 opcode_str = "motion_pointindirection";
                 inputs["DIRECTION"] = direction.serialize(InputType::Angle)?;
             },
 
-            Self::PointTowardsMenu(towards) => {
+            Opcode::PointTowardsMenu(towards) => {
                 todo!("motion_pointtowards_menu");
             },
 
-            Self::PointTowards(towards) => {
+            Opcode::PointTowards(towards) => {
                 todo!("motion_pointtowards");
             },
 
-            Self::GoToMenu(to) => {
+            Opcode::GoToMenu(to) => {
                 todo!("motion_goto_menu");
             },
 
-            Self::GoToXY(x, y) => {
+            Opcode::GoToXY(x, y) => {
                 opcode_str = "motion_gotoxy";
                 inputs["X"] = x.serialize(InputType::Number)?;
                 inputs["Y"] = y.serialize(InputType::Number)?;
             },
 
-            Self::GoTo(to) => {
+            Opcode::GoTo(to) => {
                 todo!("motion_goto");
             },
 
-            Self::GlideSecsToXY(secs, x, y) => {
+            Opcode::GlideSecsToXY(secs, x, y) => {
                 opcode_str = "motion_glidesecstoxy";
                 inputs["SECS"] = secs.serialize(InputType::PositiveNumber)?;
                 inputs["X"] = x.serialize(InputType::Number)?;
                 inputs["Y"] = y.serialize(InputType::Number)?;
             },
 
-            Self::GlideToMenu(to) => {
+            Opcode::GlideToMenu(to) => {
                 todo!("motion_glidetomenu");
             },
 
-            Self::GlideTo(secs, to) => {
+            Opcode::GlideTo(secs, to) => {
                 todo!("motion_glideto");
             },
 
-            Self::ChangeXBy(dx) => {
+            Opcode::ChangeXBy(dx) => {
                 opcode_str = "motion_changexby";
                 inputs["DX"] = dx.serialize(InputType::Number)?;
             },
 
-            Self::SetX(x) => {
+            Opcode::SetX(x) => {
                 opcode_str = "motion_setx";
                 inputs["X"] = x.serialize(InputType::Number)?;
             },
 
-            Self::ChangeYBy(dy) => {
+            Opcode::ChangeYBy(dy) => {
                 opcode_str = "motion_changeyby";
                 inputs["DY"] = dy.serialize(InputType::Number)?;
             },
 
-            Self::SetY(y) => {
+            Opcode::SetY(y) => {
                 opcode_str = "motion_sety";
                 inputs["Y"] = y.serialize(InputType::Number)?;
             },
 
-            Self::IfOnEdgeBounce() => {
+            Opcode::IfOnEdgeBounce() => {
                 opcode_str = "motion_ifonedgebounce";
             },
 
-            Self::SetRotationStyle(style) => {
+            Opcode::SetRotationStyle(style) => {
                 todo!("looks_setrotationstyle");
             },
 
-            Self::XPosition() => {
+            Opcode::XPosition() => {
                 opcode_str = "motion_xposition";
             },
 
-            Self::YPosition() => {
+            Opcode::YPosition() => {
                 opcode_str = "motion_yposition";
             },
 
-            Self::Direction() => {
+            Opcode::Direction() => {
                 opcode_str = "motion_direction";
             },
 
 
             // Operators //
-            Self::Add(num1, num2) => {
+            Opcode::Add(num1, num2) => {
                 opcode_str = "operator_add";
                 inputs["NUM1"] = num1.serialize(InputType::Number)?;
                 inputs["NUM2"] = num2.serialize(InputType::Number)?;
             },
 
-            Self::Subtract(num1, num2) => {
+            Opcode::Subtract(num1, num2) => {
                 opcode_str = "operator_add";
                 inputs["NUM1"] = num1.serialize(InputType::Number)?;
                 inputs["NUM2"] = num2.serialize(InputType::Number)?;
             },
 
-            Self::Multiply(num1, num2) => {
+            Opcode::Multiply(num1, num2) => {
                 opcode_str = "operator_multiply";
                 inputs["NUM1"] = num1.serialize(InputType::Number)?;
                 inputs["NUM2"] = num2.serialize(InputType::Number)?;
             },
 
-            Self::Divide(num1, num2) => {
+            Opcode::Divide(num1, num2) => {
                 opcode_str = "operator_divide";
                 inputs["NUM1"] = num1.serialize(InputType::Number)?;
                 inputs["NUM2"] = num2.serialize(InputType::Number)?;
             },
 
-            Self::Random(from, to) => {
+            Opcode::Random(from, to) => {
                 opcode_str = "operator_random";
                 inputs["FROM"] = from.serialize(InputType::Number)?;
                 inputs["TO"] = to.serialize(InputType::Number)?;
             },
 
-            Self::Lt(operand1, operand2) => {
+            Opcode::Lt(operand1, operand2) => {
                 opcode_str = "operator_lt";
                 inputs["OPERAND1"] = operand1.serialize(InputType::Number)?;
                 inputs["OPERAND2"] = operand2.serialize(InputType::Number)?;
             },
 
-            Self::Equals(operand1, operand2) => {
+            Opcode::Equals(operand1, operand2) => {
                 opcode_str = "operator_equals";
                 inputs["OPERAND1"] = operand1.serialize(InputType::Number)?;
                 inputs["OPERAND2"] = operand2.serialize(InputType::Number)?;
             },
 
-            Self::Gt(operand1, operand2) => {
+            Opcode::Gt(operand1, operand2) => {
                 opcode_str = "operator_gt";
                 inputs["OPERAND1"] = operand1.serialize(InputType::Number)?;
                 inputs["OPERAND2"] = operand2.serialize(InputType::Number)?;
             },
 
-            Self::And(operand1, operand2) => {
+            Opcode::And(operand1, operand2) => {
                 todo!("operator_and");
             },
 
-            Self::Or(operand1, operand2) => {
+            Opcode::Or(operand1, operand2) => {
                 todo!("operator_or");
             },
 
-            Self::Not(operand) => {
+            Opcode::Not(operand) => {
                 todo!("operator_not");
             },
 
-            Self::Join(string1, string2) => {
+            Opcode::Join(string1, string2) => {
                 opcode_str = "operator_join";
                 inputs["STRING1"] = string1.serialize(InputType::Number)?;
                 inputs["STRING2"] = string2.serialize(InputType::Number)?;
             },
 
-            Self::LetterOf(letter, string) => {
+            Opcode::LetterOf(letter, string) => {
                 opcode_str = "operator_letter_of";
                 inputs["LETTER"] = letter.serialize(InputType::WholeNumber)?;
                 inputs["STRING"] = string.serialize(InputType::String)?;
             },
 
-            Self::Length(string) => {
+            Opcode::Length(string) => {
                 opcode_str = "operator_length";
                 inputs["STRING"] = string.serialize(InputType::String)?;
             },
 
-            Self::Contains(string1, string2) => {
+            Opcode::Contains(string1, string2) => {
                 opcode_str = "operator_contains";
                 inputs["STRING1"] = string1.serialize(InputType::String)?;
                 inputs["STRING2"] = string2.serialize(InputType::String)?;
             },
 
-            Self::Mod(num1, num2) => {
+            Opcode::Mod(num1, num2) => {
                 opcode_str = "operator_mod";
                 inputs["NUM1"] = num1.serialize(InputType::Number)?;
                 inputs["NUM2"] = num2.serialize(InputType::Number)?;
             },
 
-            Self::Round(num) => {
+            Opcode::Round(num) => {
                 opcode_str = "operator_round";
                 inputs["NUM"] = num.serialize(InputType::Number)?;
             },
 
-            Self::MathOp(operator, num) => {
+            Opcode::MathOp(operator, num) => {
                 todo!("operator_mathop");
             },
 
             // TODO how do custom procedures work?
 
             // Sensing //
-            Self::TouchingObject(touchingobjectmenu) => {
+            Opcode::TouchingObject(touchingobjectmenu) => {
                 todo!("sensing_touchingobject");
             },
 
-            Self::TouchingObjectMenu(touchingobjectmenu) => {
+            Opcode::TouchingObjectMenu(touchingobjectmenu) => {
                 todo!("sensing_touchingobjectmenu");
             },
 
-            Self::TouchingColor(color) => {
+            Opcode::TouchingColor(color) => {
                 todo!("sensing_touchingcolor");
             },
 
-            Self::ColorIsTouchingColor(color, color2) => {
+            Opcode::ColorIsTouchingColor(color, color2) => {
                 todo!("sensing_coloristouchingcolor");
             },
 
-            Self::DistanceTo(distancetomenu) => {
+            Opcode::DistanceTo(distancetomenu) => {
                 todo!("sensing_distanceto");
             },
 
-            Self::DistanceToMenu(distancetomenu) => {
+            Opcode::DistanceToMenu(distancetomenu) => {
                 todo!("sensing_distancetomenu");
             },
 
-            Self::AskAndWait(question) => {
+            Opcode::AskAndWait(question) => {
                 opcode_str = "sensing_askandwait";
                 inputs["QUESTION"] = question.serialize(InputType::String)?;
             },
 
-            Self::Answer() => {
+            Opcode::Answer() => {
                 opcode_str = "sensing_answer";
             },
 
-            Self::KeyPressed(key_option) => {
+            Opcode::KeyPressed(key_option) => {
                 todo!("sensing_keypressed");
             },
 
-            Self::KeyOptions(key_option) => {
+            Opcode::KeyOptions(key_option) => {
                 todo!("sensing_keyoptions");
             },
 
-            Self::MouseDown() => {
+            Opcode::MouseDown() => {
                 opcode_str = "sensing_mousedown";
             },
 
-            Self::MouseX() => {
+            Opcode::MouseX() => {
                 opcode_str = "sensing_mousex";
             },
 
-            Self::MouseY() => {
+            Opcode::MouseY() => {
                 opcode_str = "sensing_mousey";
             },
 
-            Self::SetDragMode(drag_mode) => {
+            Opcode::SetDragMode(drag_mode) => {
                 todo!("sensing_setdragmode");
             },
 
-            Self::Loudness() => {
+            Opcode::Loudness() => {
                 opcode_str = "sensing_loudness";
             },
 
             // obsolete: sensing_loud
 
-            Self::Timer() => {
+            Opcode::Timer() => {
                 opcode_str = "sensing_timer";
             },
 
-            Self::OfObjectMenu(object) => {
+            Opcode::OfObjectMenu(object) => {
                 todo!("sensing_of_object_menu");
             },
 
-            Self::Of(property, object) => {
+            Opcode::Of(property, object) => {
                 todo!("sensing_of");
             },
 
-            Self::Current(currentmenu) => {
+            Opcode::Current(currentmenu) => {
                 todo!("sensing_current");
             },
 
-            Self::DaysSince2000() => {
+            Opcode::DaysSince2000() => {
                 opcode_str = "sensing_dayssince2000";
             },
 
-            Self::Username() => {
+            Opcode::Username() => {
                 opcode_str = "sensing_username";
             },
 
@@ -922,45 +922,45 @@ impl JsonSerialize for Opcode {
             // Sound //
             // TODO what is sound_sounds_menu?
 
-            Self::SoundsMenu(sound) => {
+            Opcode::SoundsMenu(sound) => {
                 todo!("sound_sounds_menu");
             },
 
-            Self::Play(sound_menu) => {
+            Opcode::Play(sound_menu) => {
                 todo!("sound_play");
             },
 
-            Self::PlayUntilDone(sound_menu) => {
+            Opcode::PlayUntilDone(sound_menu) => {
                 todo!("sound_playuntilmode");
             },
 
-            Self::StopAllSounds() => {
+            Opcode::StopAllSounds() => {
                 opcode_str = "sound_stopallsounds";
             },
 
-            Self::SetSoundEffectTo(effect, value) => {
+            Opcode::SetSoundEffectTo(effect, value) => {
                 todo!("sound_seteffectto");
             },
 
-            Self::ChangeSoundEffectBy(effect, value) => {
+            Opcode::ChangeSoundEffectBy(effect, value) => {
                 todo!("sound_changeeffectby");
             },
 
-            Self::ClearSoundEffects() => {
+            Opcode::ClearSoundEffects() => {
                 opcode_str = "sound_cleareffects";
             },
 
-            Self::ChangeVolumeBy(volume) => {
+            Opcode::ChangeVolumeBy(volume) => {
                 opcode_str = "sound_changevolumeby";
                 inputs["VOLUME"] = volume.serialize(InputType::Number)?;
             },
 
-            Self::SetVolumeTo(volume) => {
+            Opcode::SetVolumeTo(volume) => {
                 opcode_str = "sound_setvolumeto";
                 inputs["VOLUME"] = volume.serialize(InputType::Number)?;
             },
 
-            Self::Volume() => {
+            Opcode::Volume() => {
                 opcode_str = "sound_volume";
             },
 
@@ -972,8 +972,15 @@ impl JsonSerialize for Opcode {
         }
 
         res["opcode"] = JsonValue::String(opcode_str.to_string());
+        res["next"] = json::Null;
+        res["parent"] = match parent_uuid {
+            Some(v) => v.clone().into(),
+            None => json::Null
+        };
         res["inputs"] = inputs;
         res["fields"] = fields;
+        res["shadow"] = JsonValue::Boolean(false);
+        res["topLevel"] = JsonValue::Boolean(true);
 
         Ok(res)
     }

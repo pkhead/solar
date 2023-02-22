@@ -10,6 +10,7 @@ pub use opcode::*;
 
 mod opcode;
 
+#[derive(Debug)]
 pub enum SerializeError {
     JsonError(json::Error),
     IoError(std::io::Error),
@@ -109,11 +110,36 @@ impl Script {
     pub fn push(&mut self, block: Block) {
         self.blocks.push(block);
     }
-}
 
-impl JsonSerialize for Script {
-    fn serialize(&self) -> Result<JsonValue, SerializeError> {
-        panic!("unimplemented");        
+    /// Parses all the block in this script to JSON, adding it to the `block_list` JsonValue::Array.
+    /// 
+    /// On OK, it returns the UUID of the first block.
+    pub fn serialize(&self, block_list: &mut JsonValue, root: Option<&String>) -> Result<&String, SerializeError> {
+        let mut parent_uuid: Option<&String> = root;
+
+        for (_, block) in self.blocks.iter().enumerate() {
+            let mut res = block.serialize(block_list, parent_uuid)?;
+
+            // set parent's "next" property to my uuid
+            // and set my "parent" property to parent's uuid
+            if let Some(parent_uuid) = parent_uuid {
+                block_list[parent_uuid]["next"] = JsonValue::String(block.uuid.clone());
+                res["parent"] = JsonValue::String(parent_uuid.clone());
+                res["topLevel"] = JsonValue::Boolean(false);
+            } else {
+                // no parent, set x and y
+                res["x"] = 0.into();
+                res["y"] = 0.into();
+            }
+            
+            block_list[block.uuid.clone()] = res;
+            parent_uuid = Some(&block.uuid);
+        }
+
+        match self.blocks.first() {
+            Some(v) => Ok(&v.uuid),
+            None => Err(SerializeError::Unknown)
+        }
     }
 }
 
@@ -132,9 +158,9 @@ impl UserInput {
         }
     }
 
-    fn serialize(&self, input_type: InputType) -> Result<JsonValue, SerializeError> {
+    pub fn serialize(&self, input_type: InputType) -> Result<JsonValue, SerializeError> {
         let value = match &self.value {
-            Value::Number(num) => JsonValue::Number((*num).into()),
+            Value::Number(num) => JsonValue::String((*num).to_string().clone()),
             Value::String(s) => JsonValue::String(s.clone()),
             Value::Boolean(b) => JsonValue::Boolean(*b)
         };
@@ -150,6 +176,43 @@ impl UserInput {
             None => json::array![1, input]
         })
     } 
+}
+
+#[derive(Debug)]
+pub struct ScriptInput {
+    pub script: Option<Script>
+}
+
+impl ScriptInput {
+    pub fn serialize(&self, block_list: &mut JsonValue/*::Array*/, parent_uuid: &String) -> Result<JsonValue, SerializeError> {
+        match &self.script {
+            Some(script) => {
+                // this is the uuid of the first block
+                let uuid = script.serialize(block_list, Some(parent_uuid))?;
+                Ok(json::array![2, uuid.clone()])
+            },
+
+            None => Ok(json::array![1, json::Null])
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ReporterInput {
+    pub block: Option<Box<Block>>
+}
+
+impl ReporterInput {
+    pub fn serialize(&self, block_list: &mut JsonValue/*::Array*/, parent_uuid: &String) -> Result<JsonValue, SerializeError> {
+        match &self.block {
+            Some(block) => {
+                block_list[block.uuid.clone()] = block.serialize(block_list, Some(parent_uuid))?;
+                Ok(json::array![2, block.uuid.clone()])
+            }
+
+            None => Ok(json::array![1, json::Null])
+        }
+    }
 }
 
 // generate a UUID
@@ -444,13 +507,20 @@ impl JsonSerialize for Object {
             costumes.push(json)?;
         }
 
+        let mut block_list = JsonValue::new_object();
+
+        // serialize scripts
+        for (_, script) in self.scripts.iter().enumerate() {
+            script.serialize(&mut block_list, None)?;
+        }
+
         Ok(json::object! {
             "isStage": self.is_stage,
             "name": self.name.clone(),
             "variables": vars,
             "lists": {}, // TODO
             "broadcasts": {}, // TODO
-            "blocks": {}, // TODO
+            "blocks": block_list,
             "comments": {},
             "currentCostume": self.costume_index,
             "costumes": costumes, // TODO
